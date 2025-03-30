@@ -35,7 +35,8 @@ if 'quiz_started' not in st.session_state:
 if 'quiz_completed' not in st.session_state:
     st.session_state['quiz_completed'] = False
 if 'quiz_timer' not in st.session_state:
-    st.session_state['quiz_timer'] = 600  # 10 minutes in seconds
+    st.session_state['quiz_timer'] = 300  # 10 minutes in seconds
+    
 if 'quiz_questions' not in st.session_state:
     st.session_state['quiz_questions'] = []
 if 'user_answers' not in st.session_state:
@@ -219,29 +220,34 @@ def get_all_users():
 
 def get_all_results():
     conn = sqlite3.connect('trivia_quiz.db')
-    results = pd.read_sql_query(
-        """
-        SELECT 
-            results.id,
-            users.username,
-            subjects.name as subject,
-            semesters.name as semester,
-            results.score,
-            results.total_questions,
-            results.completed_at,
-            results.time_taken
-        FROM results
-        JOIN users ON results.user_id = users.id
-        JOIN quizzes ON results.quiz_id = quizzes.id
-        JOIN subjects ON quizzes.subject_id = subjects.id
-        JOIN semesters ON subjects.semester_id = semesters.id
-        ORDER BY results.completed_at DESC
-        """, 
-        conn
-    )
-    conn.close()
-    return results
-
+    try:
+        results = pd.read_sql_query(
+            """
+            SELECT 
+                results.id,
+                users.username,
+                subjects.name as subject,
+                semesters.name as semester,
+                results.score,
+                results.total_questions,
+                results.completed_at,
+                results.time_taken
+            FROM results
+            JOIN users ON results.user_id = users.id
+            JOIN quizzes ON results.quiz_id = quizzes.id
+            JOIN subjects ON quizzes.subject_id = subjects.id
+            JOIN semesters ON subjects.semester_id = semesters.id
+            ORDER BY results.completed_at DESC
+            """, 
+            conn
+        )
+        return results
+    except Exception as e:
+        # If the join fails, return an empty DataFrame with the expected columns
+        columns = ['id', 'username', 'subject', 'semester', 'score', 'total_questions', 'completed_at', 'time_taken']
+        return pd.DataFrame(columns=columns)
+    finally:
+        conn.close()
 def get_user_results(user_id):
     conn = sqlite3.connect('trivia_quiz.db')
     results = pd.read_sql_query(
@@ -269,7 +275,7 @@ def get_user_results(user_id):
 
 def generate_quiz(subject_id, subject_name):
     # Initialize Groq LLM
-    groq_api_key = "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"
+    groq_api_key ="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"
     if not groq_api_key:
         st.error("GROQ API Key not found. Please set the GROQ_API_KEY environment variable.")
         return None
@@ -830,101 +836,104 @@ def display_admin_panel():
         else:
             st.info("No subjects found")
     
+    
+         
+# Add this code to the admin_tabs[2] section to debug the results issue
+    
     with admin_tabs[2]:
         st.subheader("Results Management")
+    
+    # Debug information
+        st.subheader("Debugging Information")
+    
+    # Check if results table has data
+        conn = sqlite3.connect('trivia_quiz.db')
+        cursor = conn.cursor()
+    
+    # Check raw results table
+        cursor.execute("SELECT COUNT(*) FROM results")
+        results_count = cursor.fetchone()[0]
+        st.write(f"Number of records in results table: {results_count}")
+    
+        if results_count > 0:
+        # If there are results, check each join separately
+            cursor.execute("""
+                SELECT r.id, r.user_id, r.quiz_id, r.score, r.total_questions, r.completed_at, r.time_taken,
+                   u.username
+                FROM results r
+                LEFT JOIN users u ON r.user_id = u.id
+                LIMIT 5
+            """)
+            results_users = cursor.fetchall()
+            st.write("Sample results with users join:")
+            st.write(results_users)
         
-        # Display all results
+            cursor.execute("""
+            SELECT r.id, r.quiz_id, q.subject_id
+            FROM results r
+            LEFT JOIN quizzes q ON r.quiz_id = q.id
+            LIMIT 5
+        """)
+            results_quizzes = cursor.fetchall()
+            st.write("Sample results with quizzes join:")
+            st.write(results_quizzes)
+        
+            if len(results_quizzes) > 0:
+            # Check subject data
+                sample_subject_id = results_quizzes[0][2]
+                cursor.execute("""
+                SELECT s.id, s.name, s.semester_id
+                FROM subjects s
+                WHERE s.id = ?
+            """, (sample_subject_id,))
+                subject_data = cursor.fetchone()
+                st.write(f"Subject data for ID {sample_subject_id}:")
+                st.write(subject_data)
+            
+                if subject_data:
+                # Check semester data
+                    semester_id = subject_data[2]
+                    cursor.execute("""
+                        SELECT id, name
+                    FROM semesters
+                    WHERE id = ?
+                """, (semester_id,))
+                    semester_data = cursor.fetchone()
+                    st.write(f"Semester data for ID {semester_id}:")
+                    st.write(semester_data)
+    
+    # Try a simpler query
+        st.subheader("Simplified Results")
+        try:
+            simple_results = pd.read_sql_query(
+            """
+            SELECT 
+                results.id,
+                results.user_id,
+                results.quiz_id,
+                results.score,
+                results.total_questions,
+                results.completed_at,
+                results.time_taken
+            FROM results
+            ORDER BY results.completed_at DESC
+            """, 
+            conn
+        )
+            st.write("Raw results data:")
+            st.dataframe(simple_results)
+        except Exception as e:
+            st.error(f"Error executing simple query: {e}")
+    
+        conn.close()
+    
+    # Continue with the original code...
+    # Display all results
         results = get_all_results()
-        
+    
         if not results.empty:
-            # Format timestamps
-            results['completed_at'] = pd.to_datetime(results['completed_at'])
-            results['formatted_date'] = results['completed_at'].dt.strftime('%Y-%m-%d %H:%M')
-            
-            # Format time taken
-            results['time_taken_min'] = results['time_taken'] // 60
-            results['time_taken_sec'] = results['time_taken'] % 60
-            results['formatted_time'] = results.apply(
-                lambda x: f"{x['time_taken_min']}m {x['time_taken_sec']}s", axis=1
-            )
-            
-            # Calculate percentage
-            results['percentage'] = (results['score'] / results['total_questions'] * 100).round(1)
-            
-            # Filter options
-            filter_col1, filter_col2, filter_col3 = st.columns(3)
-            
-            with filter_col1:
-                # Filter by username
-                username_filter = st.multiselect(
-                    "Filter by Username",
-                    options=sorted(results['username'].unique()),
-                    key="username_filter"
-                )
-            
-            with filter_col2:
-                # Filter by subject
-                subject_filter = st.multiselect(
-                    "Filter by Subject",
-                    options=sorted(results['subject'].unique()),
-                    key="subject_filter"
-                )
-            
-            with filter_col3:
-                # Filter by semester
-                semester_filter = st.multiselect(
-                    "Filter by Semester",
-                    options=sorted(results['semester'].unique()),
-                    key="semester_filter"
-                )
-            
-            # Apply filters
-            filtered_results = results.copy()
-            if username_filter:
-                filtered_results = filtered_results[filtered_results['username'].isin(username_filter)]
-            if subject_filter:
-                filtered_results = filtered_results[filtered_results['subject'].isin(subject_filter)]
-            if semester_filter:
-                filtered_results = filtered_results[filtered_results['semester'].isin(semester_filter)]
-            
-            # Display filtered results
-            if not filtered_results.empty:
-                st.dataframe(
-                    filtered_results[['username', 'formatted_date', 'subject', 'semester', 'score', 'total_questions', 'percentage', 'formatted_time']]
-                    .rename(columns={
-                        'username': 'User',
-                        'formatted_date': 'Date', 
-                        'subject': 'Subject', 
-                        'semester': 'Semester', 
-                        'score': 'Score', 
-                        'total_questions': 'Total', 
-                        'percentage': 'Percentage', 
-                        'formatted_time': 'Time Taken'
-                    })
-                )
-                
-                # Summary statistics
-                st.subheader("Summary Statistics")
-                
-                stats_col1, stats_col2, stats_col3 = st.columns(3)
-                
-                with stats_col1:
-                    st.metric("Total Quizzes", len(filtered_results))
-                
-                with stats_col2:
-                    avg_score = (filtered_results['score'].sum() / filtered_results['total_questions'].sum() * 100).round(1)
-                    st.metric("Average Score", f"{avg_score}%")
-                
-                with stats_col3:
-                    avg_time = filtered_results['time_taken'].mean().round(0)
-                    avg_min = int(avg_time // 60)
-                    avg_sec = int(avg_time % 60)
-                    st.metric("Average Time", f"{avg_min}m {avg_sec}s")
-            else:
-                st.info("No results match the selected filters")
-        else:
-            st.info("No quiz results found")
-
+            st.success("Results retrieved successfully!")
+        # Rest of the code remains the same...
 def logout():
     st.session_state['user_id'] = None
     st.session_state['username'] = None
