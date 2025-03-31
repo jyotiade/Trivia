@@ -2,7 +2,4 @@ streamlit
 pandas
 langchain
 langchain-groq
-
-
-
-
+langchain-community
