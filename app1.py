@@ -16,7 +16,7 @@ from langchain.prompts.chat import (
 
 # Set page configuration
 st.set_page_config(
-    page_title="Academic Quiz Generator",
+    page_title="Trivia Quiz Generator",
     page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded"
