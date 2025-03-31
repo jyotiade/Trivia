@@ -139,7 +139,7 @@ def init_db():
     cursor.execute("SELECT * FROM subjects")
     if not cursor.fetchall():
         subjects = [
-            ("Mathematics", 1), ("Physics", 1), ("Chemistry", 1),
+            ("Mathematics I", 1), ("Engineering Physics", 1), ("Chemistry", 1),
             ("Computer Science", 2) ("English", 2),
             # Add more subjects for other semesters...
         ]
