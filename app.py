@@ -139,8 +139,8 @@ def init_db():
     cursor.execute("SELECT * FROM subjects")
     if not cursor.fetchall():
         subjects = [
-            ("Mathematics", 1), ("Physics", 1), ("Chemistry", 1), ("Biology", 1), ("History", 1), ("Geography", 1),
-            ("Computer Science", 2), ("Statistics", 2), ("Economics", 2), ("Psychology", 2), ("Sociology", 2), ("English", 2),
+            ("Mathematics", 1), ("Physics", 1), ("Chemistry", 1),
+            ("Computer Science", 2) ("English", 2),
             # Add more subjects for other semesters...
         ]
         cursor.executemany("INSERT INTO subjects (name, semester_id) VALUES (?, ?)", subjects)
