@@ -1,13 +1,13 @@
-streamlit==1.28.0
-pandas==2.1.1
+streamlit
+pandas
 
 # Database connectors
-mysql-connector-python==8.1.0
+mysql-connector-python
 
 # LLM integration
-langchain==0.0.325
-langchain-groq==0.1.0
+langchain
+langchain-groq
 
 
-matplotlib==3.8.0
-plotly==5.18.0
+matplotlib
+plotly
