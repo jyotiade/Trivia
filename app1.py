@@ -23,6 +23,53 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
+# Apply the dark blue background with white text boxes
+st.markdown("""
+    <style>
+        /* Main background and text */
+        .stApp {
+            background-color: #0e3b55;
+            color: white;
+        }
+        
+        /* Headers */
+        h1, h2, h3, h4, h5, h6 {
+            color: white;
+        }
+        
+        /* Text inputs and other form elements */
+        .stTextInput>div>div>input,
+        .stTextArea>div>div>textarea,
+        .stSelectbox>div,
+        .stMultiselect>div,
+        .stNumberInput>div {
+            background-color: white !important;
+            color: #0e3b55 !important;
+            border: 1px solid white;
+        }
+        
+        /* Buttons */
+        .stButton>button {
+            background-color: white;
+            color: #0e3b55;
+            font-weight: bold;
+            border: none;
+            transition: transform 0.4s ease;
+        }
+        
+        .stButton>button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+        }
+        
+        /* Sidebar */
+        .css-1d391kg, .css-1lcbmhc {
+            background-color: #0e3b55;
+        }
+    </style>
+""", unsafe_allow_html=True)
+
+
 # Initialize session states
 if 'user_id' not in st.session_state:
     st.session_state['user_id'] = None
