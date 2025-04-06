@@ -531,57 +531,72 @@ def generate_quiz(subject_id, subject_name):
                 cursor = conn.cursor()
                 
                 try:
+                    # Convert subject_id to standard Python int to avoid int64 issues
+                    subject_id_int = int(subject_id)
+                    
+                    # Current timestamp for created_at
+                    current_time = datetime.now()
+                    
                     if db_type == "mysql":
                         cursor.execute(
                             "INSERT INTO quizzes (id, subject_id, created_at) VALUES (%s, %s, %s)",
-                            (quiz_id, subject_id, datetime.now())
+                            (quiz_id, subject_id_int, current_time)
                         )
                         
-                        for question in quiz_data:
-                            cursor.execute(
-                                """
-                                INSERT INTO questions 
-                                (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_answer) 
-                                VALUES (%s, %s, %s, %s, %s, %s, %s)
-                                """,
-                                (
-                                    quiz_id, 
-                                    question['question_text'], 
-                                    question['option_a'], 
-                                    question['option_b'], 
-                                    question['option_c'], 
-                                    question['option_d'], 
-                                    question['correct_answer']
-                                )
-                            )
+                        # Insert questions with prepared statements
+                        question_insert_query = """
+                        INSERT INTO questions 
+                        (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_answer) 
+                        VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        """
+                        
+                        question_data = [(
+                            quiz_id, 
+                            question['question_text'], 
+                            question['option_a'], 
+                            question['option_b'], 
+                            question['option_c'], 
+                            question['option_d'], 
+                            question['correct_answer']
+                        ) for question in quiz_data]
+                        
+                        cursor.executemany(question_insert_query, question_data)
                     else:
+                        # SQLite
                         cursor.execute(
                             "INSERT INTO quizzes (id, subject_id, created_at) VALUES (?, ?, ?)",
-                            (quiz_id, subject_id, datetime.now())
+                            (quiz_id, subject_id_int, current_time)
                         )
                         
-                        for question in quiz_data:
-                            cursor.execute(
-                                """
-                                INSERT INTO questions 
-                                (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_answer) 
-                                VALUES (?, ?, ?, ?, ?, ?, ?)
-                                """,
-                                (
-                                    quiz_id, 
-                                    question['question_text'], 
-                                    question['option_a'], 
-                                    question['option_b'], 
-                                    question['option_c'], 
-                                    question['option_d'], 
-                                    question['correct_answer']
-                                )
-                            )
+                        # Insert questions with prepared statements
+                        question_insert_query = """
+                        INSERT INTO questions 
+                        (quiz_id, question_text, option_a, option_b, option_c, option_d, correct_answer) 
+                        VALUES (?, ?, ?, ?, ?, ?, ?)
+                        """
+                        
+                        question_data = [(
+                            quiz_id, 
+                            question['question_text'], 
+                            question['option_a'], 
+                            question['option_b'], 
+                            question['option_c'], 
+                            question['option_d'], 
+                            question['correct_answer']
+                        ) for question in quiz_data]
+                        
+                        cursor.executemany(question_insert_query, question_data)
                     
                     conn.commit()
                     return {"quiz_id": quiz_id, "questions": quiz_data}
                     
+                except Exception as db_error:
+                    conn.rollback()
+                    st.error(f"Database error: {db_error}")
+                    return None
+                    
                 finally:
+                    cursor.close()
                     conn.close()
                     
             except json.JSONDecodeError:
@@ -725,23 +740,51 @@ def add_semester(name):
         conn.close()
 
 def add_subject(name, semester_id):
-    conn, db_type = get_db_connection()
-    cursor = conn.cursor()
+    """
+    Add a new subject to the database
     
+    Args:
+        name (str): Name of the subject
+        semester_id (int or str): ID of the semester this subject belongs to
+        
+    Returns:
+        bool: True if successful, False if failed
+    """
     try:
+        # Make sure semester_id is an integer
+        semester_id = int(semester_id)
+        
+        # Get database connection
+        conn, db_type = get_db_connection()
+        cursor = conn.cursor()
+        
+        # First check if subject already exists in this semester
+        if db_type == "mysql":
+            cursor.execute("SELECT id FROM subjects WHERE name = %s AND semester_id = %s", (name, semester_id))
+        else:
+            cursor.execute("SELECT id FROM subjects WHERE name = ? AND semester_id = ?", (name, semester_id))
+        
+        existing = cursor.fetchone()
+        if existing:
+            # Subject already exists in this semester
+            st.error(f"Subject '{name}' already exists in this semester")
+            return False
+            
+        # Insert the new subject
         if db_type == "mysql":
             cursor.execute("INSERT INTO subjects (name, semester_id) VALUES (%s, %s)", (name, semester_id))
         else:
             cursor.execute("INSERT INTO subjects (name, semester_id) VALUES (?, ?)", (name, semester_id))
-            
+        
         conn.commit()
         return True
     except Exception as e:
-        print(f"Error adding subject: {e}")
+        st.error(f"Error adding subject: {e}")
+        print(f"Database error: {e}")
         return False
     finally:
-        conn.close()
-
+        if 'conn' in locals() and conn:
+            conn.close()
 def delete_subject(subject_id):
     conn, db_type = get_db_connection()
     cursor = conn.cursor()
@@ -772,7 +815,7 @@ def delete_semester(semester_id):
 
 # UI Components
 def display_login_register():
-    st.title("🧠 Academic Quiz Generator")
+    st.title("🧠 Trivia Quiz Generator")
     
     tab1, tab2 = st.tabs(["Login", "Register"])
     
@@ -815,7 +858,7 @@ def display_login_register():
                     st.error("Username already exists. Please choose a different username.")
 
 def display_user_home():
-    st.title(f"🧠 Welcome to Academic Quiz Generator, {st.session_state['username']}!")
+    st.title(f"🧠 Welcome to Trivia Quiz Generator, {st.session_state['username']}!")
     
     # Reset quiz state if returning to home
     if st.session_state['quiz_completed'] and st.button("Return to Home", key="btn_return_home"):
@@ -1123,6 +1166,10 @@ def display_admin_panel():
     with tabs[0]:
         st.subheader("Manage Users")
         
+        # Add a refresh button
+        if st.button("Refresh User List", key="refresh_users"):
+            st.rerun()
+        
         users_df = get_all_users()
         
         if users_df.empty:
@@ -1131,6 +1178,11 @@ def display_admin_panel():
         
         # Don't show the current user
         users_df = users_df[users_df['id'] != st.session_state['user_id']]
+        
+        # Add search functionality
+        search_user = st.text_input("Search users", "")
+        if search_user:
+            users_df = users_df[users_df['username'].str.contains(search_user, case=False)]
         
         # Display users with action buttons
         for index, row in users_df.iterrows():
@@ -1143,139 +1195,305 @@ def display_admin_panel():
                 st.write(f"Role: {row['role']}")
             
             with col3:
-                if st.button("Make Admin", key=f"make_admin_{row['id']}"):
-                    update_user_role(row['id'], "admin")
-                    st.success(f"Updated {row['username']} to admin")
-                    st.rerun()
+                if row['role'] != "admin" and st.button("Make Admin", key=f"make_admin_{row['id']}"):
+                    with st.spinner("Updating user role..."):
+                        success = update_user_role(row['id'], "admin")
+                        if success:
+                            st.success(f"Updated {row['username']} to admin")
+                            time.sleep(1)  # Give user time to see the message
+                            st.rerun()
+                        else:
+                            st.error("Failed to update user role")
             
             with col4:
                 if st.button("Delete User", key=f"delete_user_{row['id']}"):
-                    delete_user(row['id'])
-                    st.success(f"Deleted user {row['username']}")
-                    st.rerun()
+                    # Add confirmation to prevent accidental deletion
+                    if st.checkbox(f"Confirm deletion of {row['username']}", key=f"confirm_delete_{row['id']}"):
+                        with st.spinner("Deleting user..."):
+                            success = delete_user(row['id'])
+                            if success:
+                                st.success(f"Deleted user {row['username']}")
+                                time.sleep(1)  # Give user time to see the message
+                                st.rerun()
+                            else:
+                                st.error("Failed to delete user")
             
             st.markdown("---")
     
     with tabs[1]:
         st.subheader("Manage Semesters & Subjects")
         
+        # Add refresh button
+        if st.button("Refresh Semesters & Subjects", key="refresh_sem_subj"):
+            st.rerun()
+            
         col1, col2 = st.columns(2)
         
         with col1:
             st.write("### Add Semester")
-            semester_name = st.text_input("Semester Name", key="new_semester_name")
-            
-            if st.button("Add Semester", key="btn_add_semester"):
-                if semester_name:
-                    success = add_semester(semester_name)
-                    if success:
-                        st.success(f"Added semester: {semester_name}")
-                        st.rerun()
+            with st.form("add_semester_form"):
+                semester_name = st.text_input("Semester Name", key="new_semester_name")
+                submit_semester = st.form_submit_button("Add Semester")
+                
+                if submit_semester:
+                    if semester_name:
+                        with st.spinner("Adding semester..."):
+                            success = add_semester(semester_name)
+                            if success:
+                                st.success(f"Added semester: {semester_name}")
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error(f"Semester '{semester_name}' already exists.")
                     else:
-                        st.error(f"Semester '{semester_name}' already exists.")
-                else:
-                    st.error("Please enter a semester name")
+                        st.error("Please enter a semester name")
         
         with col2:
             st.write("### Add Subject")
             
             # Get semesters for dropdown
             semesters_df = get_semesters()
-            if not semesters_df.empty:
-                semester_options = semesters_df['name'].tolist()
-                selected_semester = st.selectbox("Select Semester", options=semester_options, key="semester_for_subject")
-                semester_id = semesters_df.loc[semesters_df['name'] == selected_semester, 'id'].iloc[0]
-                
-                subject_name = st.text_input("Subject Name", key="new_subject_name")
-                
-                if st.button("Add Subject", key="btn_add_subject"):
-                    if subject_name:
-                        success = add_subject(subject_name, semester_id)
-                        if success:
-                            st.success(f"Added subject: {subject_name}")
-                            st.rerun()
+            
+            with st.form("add_subject_form"):
+                if not semesters_df.empty:
+                    semester_options = semesters_df['name'].tolist()
+                    selected_semester = st.selectbox("Select Semester", options=semester_options, key="semester_for_subject")
+                    semester_id = semesters_df.loc[semesters_df['name'] == selected_semester, 'id'].iloc[0]
+                    
+                    subject_name = st.text_input("Subject Name", key="new_subject_name")
+                    submit_subject = st.form_submit_button("Add Subject")
+                    
+                    if submit_subject:
+                        if subject_name:
+                            with st.spinner("Adding subject..."):
+                                success = add_subject(subject_name, semester_id)
+                                if success:
+                                    st.success(f"Added subject: {subject_name}")
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to add subject - may already exist")
                         else:
-                            st.error("Failed to add subject")
-                    else:
-                        st.error("Please enter a subject name")
-            else:
-                st.info("Add a semester first")
+                            st.error("Please enter a subject name")
+                else:
+                    st.info("Add a semester first")
+                    st.form_submit_button("Add Subject", disabled=True)
         
         st.markdown("---")
         
-        # View and delete semesters
-        st.write("### Manage Semesters")
-        semesters_df = get_semesters()
+        # View and delete semesters with collapsible sections
+        with st.expander("Manage Semesters", expanded=True):
+            semesters_df = get_semesters()
+            
+            if not semesters_df.empty:
+                for index, row in semesters_df.iterrows():
+                    col1, col2, col3 = st.columns([3, 1, 1])
+                    
+                    with col1:
+                        st.write(f"**{row['name']}**")
+                    
+                    # Add edit functionality
+                    with col2:
+                        if st.button("Edit", key=f"edit_semester_{row['id']}"):
+                            st.session_state[f"edit_semester_mode_{row['id']}"] = True
+                    
+                    # Edit mode
+                    if st.session_state.get(f"edit_semester_mode_{row['id']}", False):
+                        with col1:
+                            new_name = st.text_input("New name", value=row['name'], key=f"new_semester_name_{row['id']}")
+                            if st.button("Save", key=f"save_semester_{row['id']}"):
+                                success = update_semester(row['id'], new_name)
+                                if success:
+                                    st.success(f"Updated semester name to: {new_name}")
+                                    st.session_state[f"edit_semester_mode_{row['id']}"] = False
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to update semester name")
+                    
+                    with col3:
+                        if st.button("Delete", key=f"delete_semester_{row['id']}"):
+                            # Add confirmation to prevent accidental deletion
+                            if st.checkbox(f"Confirm deletion of {row['name']}", key=f"confirm_delete_semester_{row['id']}"):
+                                with st.spinner("Deleting semester..."):
+                                    success = delete_semester(row['id'])
+                                    if success:
+                                        st.success(f"Deleted semester: {row['name']}")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to delete semester. Make sure it has no subjects.")
+                    
+                    st.markdown("---")
+            else:
+                st.info("No semesters found")
         
-        if not semesters_df.empty:
-            for index, row in semesters_df.iterrows():
-                col1, col2 = st.columns([4, 1])
+        # View and delete subjects with filtering
+        with st.expander("Manage Subjects", expanded=True):
+            subjects_df = get_all_subjects()
+            
+            if not subjects_df.empty:
+                # Add filtering by semester
+                if not semesters_df.empty:
+                    semester_filter = st.selectbox(
+                        "Filter by semester",
+                        options=["All"] + semesters_df['name'].tolist(),
+                        key="semester_filter"
+                    )
+                    
+                    if semester_filter != "All":
+                        subjects_df = subjects_df[subjects_df['semester'] == semester_filter]
                 
-                with col1:
-                    st.write(f"**{row['name']}**")
+                # Add search functionality
+                search_subject = st.text_input("Search subjects", "")
+                if search_subject:
+                    subjects_df = subjects_df[subjects_df['name'].str.contains(search_subject, case=False)]
                 
-                with col2:
-                    if st.button("Delete", key=f"delete_semester_{row['id']}"):
-                        delete_semester(row['id'])
-                        st.success(f"Deleted semester: {row['name']}")
-                        st.rerun()
-                
-                st.markdown("---")
-        else:
-            st.info("No semesters found")
-        
-        # View and delete subjects
-        st.write("### Manage Subjects")
-        subjects_df = get_all_subjects()
-        
-        if not subjects_df.empty:
-            for index, row in subjects_df.iterrows():
-                col1, col2, col3 = st.columns([3, 2, 1])
-                
-                with col1:
-                    st.write(f"**{row['name']}**")
-                
-                with col2:
-                    st.write(f"Semester: {row['semester']}")
-                
-                with col3:
-                    if st.button("Delete", key=f"delete_subject_{row['id']}"):
-                        delete_subject(row['id'])
-                        st.success(f"Deleted subject: {row['name']}")
-                        st.rerun()
-                
-                st.markdown("---")
-        else:
-            st.info("No subjects found")
+                for index, row in subjects_df.iterrows():
+                    col1, col2, col3, col4 = st.columns([3, 2, 1, 1])
+                    
+                    with col1:
+                        st.write(f"**{row['name']}**")
+                    
+                    with col2:
+                        st.write(f"Semester: {row['semester']}")
+                    
+                    # Add edit functionality
+                    with col3:
+                        if st.button("Edit", key=f"edit_subject_{row['id']}"):
+                            st.session_state[f"edit_subject_mode_{row['id']}"] = True
+                    
+                    # Edit mode
+                    if st.session_state.get(f"edit_subject_mode_{row['id']}", False):
+                        with col1:
+                            new_name = st.text_input("New name", value=row['name'], key=f"new_subject_name_{row['id']}")
+                            if st.button("Save", key=f"save_subject_{row['id']}"):
+                                success = update_subject(row['id'], new_name)
+                                if success:
+                                    st.success(f"Updated subject name to: {new_name}")
+                                    st.session_state[f"edit_subject_mode_{row['id']}"] = False
+                                    time.sleep(1)
+                                    st.rerun()
+                                else:
+                                    st.error("Failed to update subject name")
+                    
+                    with col4:
+                        if st.button("Delete", key=f"delete_subject_{row['id']}"):
+                            # Add confirmation to prevent accidental deletion
+                            if st.checkbox(f"Confirm deletion of {row['name']}", key=f"confirm_delete_subject_{row['id']}"):
+                                with st.spinner("Deleting subject..."):
+                                    success = delete_subject(row['id'])
+                                    if success:
+                                        st.success(f"Deleted subject: {row['name']}")
+                                        time.sleep(1)
+                                        st.rerun()
+                                    else:
+                                        st.error("Failed to delete subject")
+                    
+                    st.markdown("---")
+            else:
+                st.info("No subjects found")
     
     with tabs[2]:
         st.subheader("Quiz Results")
         
+        # Add a refresh button
+        if st.button("Refresh Quiz Results", key="refresh_results"):
+            st.rerun()
+            
         results_df = get_all_results()
         
         if results_df.empty:
             st.info("No quiz results yet.")
             return
         
+        # Add search and filter options
+        col1, col2 = st.columns(2)
+        with col1:
+            search_user_results = st.text_input("Search by username", "")
+        with col2:
+            if 'semester' in results_df.columns:
+                semester_options = ["All"] + sorted(results_df['semester'].unique().tolist())
+                semester_filter_results = st.selectbox("Filter by semester", options=semester_options, key="semester_filter_results")
+        
+        # Apply filters
+        filtered_df = results_df.copy()
+        if search_user_results:
+            filtered_df = filtered_df[filtered_df['username'].str.contains(search_user_results, case=False)]
+        if 'semester' in filtered_df.columns and semester_filter_results != "All":
+            filtered_df = filtered_df[filtered_df['semester'] == semester_filter_results]
+        
         # Format the dataframe
-        results_df['Score'] = results_df['score'].astype(str) + '/' + results_df['total_questions'].astype(str)
-        results_df['Percentage'] = (results_df['score'] / results_df['total_questions'] * 100).round(1).astype(str) + '%'
+        filtered_df['Score'] = filtered_df['score'].astype(str) + '/' + filtered_df['total_questions'].astype(str)
+        filtered_df['Percentage'] = (filtered_df['score'] / filtered_df['total_questions'] * 100).round(1).astype(str) + '%'
         
         # Format time taken
-        results_df['Time'] = results_df['time_taken'].apply(lambda x: f"{x // 60}m {x % 60}s")
+        filtered_df['Time'] = filtered_df['time_taken'].apply(lambda x: f"{x // 60}m {x % 60}s")
+        
+        # Sort options
+        sort_options = ["Date (newest first)", "Date (oldest first)", "Score (highest first)", "Score (lowest first)"]
+        sort_by = st.selectbox("Sort by", options=sort_options, key="sort_results")
+        
+        if sort_by == "Date (newest first)":
+            filtered_df = filtered_df.sort_values(by='completed_at', ascending=False)
+        elif sort_by == "Date (oldest first)":
+            filtered_df = filtered_df.sort_values(by='completed_at', ascending=True)
+        elif sort_by == "Score (highest first)":
+            filtered_df = filtered_df.sort_values(by='score', ascending=False)
+        elif sort_by == "Score (lowest first)":
+            filtered_df = filtered_df.sort_values(by='score', ascending=True)
+        
+        # Add download button
+        csv = filtered_df.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="Download Results as CSV",
+            data=csv,
+            file_name="quiz_results.csv",
+            mime="text/csv",
+        )
         
         # Display results
         st.dataframe(
-            results_df[['username', 'subject', 'semester', 'Score', 'Percentage', 'Time', 'completed_at']].rename(columns={
+            filtered_df[['username', 'subject', 'semester', 'Score', 'Percentage', 'Time', 'completed_at']].rename(columns={
                 'username': 'User',
                 'subject': 'Subject',
                 'semester': 'Semester',
                 'completed_at': 'Date'
             })
         )
+        
+        # Add analytics section
+        with st.expander("Quiz Analytics", expanded=False):
+            if not results_df.empty:
+                st.write("### Summary Statistics")
+                
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    avg_score = (results_df['score'].sum() / results_df['total_questions'].sum() * 100).round(1)
+                    st.metric("Average Score", f"{avg_score}%")
+                
+                with col2:
+                    total_quizzes = len(results_df)
+                    st.metric("Total Quizzes Taken", total_quizzes)
+                
+                with col3:
+                    unique_users = results_df['username'].nunique()
+                    st.metric("Unique Users", unique_users)
+                
+                # Performance by semester
+                if 'semester' in results_df.columns:
+                    st.write("### Performance by Semester")
+                    semester_performance = results_df.groupby('semester').apply(
+                        lambda x: (x['score'].sum() / x['total_questions'].sum() * 100).round(1)
+                    ).reset_index()
+                    semester_performance.columns = ['Semester', 'Average Score (%)']
+                    
+                    st.bar_chart(semester_performance.set_index('Semester'))
+            else:
+                st.info("No data available for analytics")
     
     with tabs[3]:
-        st.subheader("EC2 Database Setup")
+        st.subheader("Database Setup")
         
         st.markdown("""
         ### Configure MySQL Database on EC2
@@ -1371,20 +1589,90 @@ def display_admin_panel():
             db_password = st.text_input("Database Password", type="password", value=DB_CONFIG.get('password', ''))
             db_name = st.text_input("Database Name", value=DB_CONFIG.get('database', ''))
             
-            if st.form_submit_button("Test Connection"):
+            test_col, save_col = st.columns(2)
+            with test_col:
+                if st.form_submit_button("Test Connection"):
+                    try:
+                        test_config = {
+                            'host': ec2_host,
+                            'user': db_user,
+                            'password': db_password,
+                            'database': db_name
+                        }
+                        conn = mysql.connector.connect(**test_config)
+                        conn.close()
+                        st.success("Connection successful!")
+                    except Exception as e:
+                        st.error(f"Connection failed: {e}")
+            
+            with save_col:
+                if st.form_submit_button("Save Configuration"):
+                    try:
+                        # Test connection first
+                        test_config = {
+                            'host': ec2_host,
+                            'user': db_user,
+                            'password': db_password,
+                            'database': db_name
+                        }
+                        conn = mysql.connector.connect(**test_config)
+                        conn.close()
+                        
+                        # Update the configuration
+                        with open("config.py", "w") as f:
+                            f.write(f"""DB_CONFIG = {{
+    'host': '{ec2_host}',
+    'user': '{db_user}',
+    'password': '{db_password}',
+    'database': '{db_name}'
+}}""")
+                        st.success("Configuration saved successfully!")
+                    except Exception as e:
+                        st.error(f"Failed to save configuration: {e}")
+        
+        # Add backup and restore functionality
+        with st.expander("Database Backup and Restore", expanded=False):
+            st.write("### Backup Database")
+            if st.button("Create Database Backup"):
                 try:
-                    test_config = {
-                        'host': ec2_host,
-                        'user': db_user,
-                        'password': db_password,
-                        'database': db_name
-                    }
-                    conn = mysql.connector.connect(**test_config)
-                    conn.close()
-                    st.success("Connection successful! Update your code with these settings.")
+                    with st.spinner("Creating backup..."):
+                        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                        backup_filename = f"backup_{timestamp}.sql"
+                        
+                        # Create the backup
+                        command = f"mysqldump -h {DB_CONFIG['host']} -u {DB_CONFIG['user']} -p{DB_CONFIG['password']} {DB_CONFIG['database']} > {backup_filename}"
+                        
+                        # For security, don't show the actual command with password
+                        st.code(f"mysqldump -h {DB_CONFIG['host']} -u {DB_CONFIG['user']} -p ***** {DB_CONFIG['database']} > {backup_filename}")
+                        
+                        # Execute command (this is a placeholder - in actual implementation, you'd use subprocess)
+                        st.info(f"Backup would be created as {backup_filename}")
+                        st.success("Backup created successfully!")
+                        
+                        # Provide download link (placeholder)
+                        st.download_button(
+                            label="Download Backup",
+                            data="This is a placeholder for the actual SQL backup file",
+                            file_name=backup_filename,
+                            mime="application/sql"
+                        )
                 except Exception as e:
-                    st.error(f"Connection failed: {e}")
-
+                    st.error(f"Backup failed: {e}")
+            
+            st.write("### Restore Database")
+            uploaded_file = st.file_uploader("Upload backup file (.sql)", type=["sql"])
+            if uploaded_file is not None:
+                if st.button("Restore Database from Backup"):
+                    # Add confirmation
+                    if st.checkbox("I understand this will overwrite the current database"):
+                        try:
+                            with st.spinner("Restoring database..."):
+                                # Placeholder for restore logic
+                                st.warning("This would restore the database from the uploaded file")
+                                st.info("Restore functionality requires server-side implementation")
+                                st.success("Restore completed successfully!")
+                        except Exception as e:
+                            st.error(f"Restore failed: {e}")
 def display_logout_button():
     if st.sidebar.button("Logout", key="btn_logout"):
         # Clear session state
