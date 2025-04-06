@@ -6,6 +6,8 @@ mysql-connector-python==8.1.0
 
 # LLM integration
 langchain==0.0.325
+langchain-groq==0.1.0
+
 
 matplotlib==3.8.0
 plotly==5.18.0
