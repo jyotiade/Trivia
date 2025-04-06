@@ -1,4 +1,3 @@
-# Core dependencies
 streamlit==1.28.0
 pandas==2.1.1
 
@@ -7,13 +6,6 @@ mysql-connector-python==8.1.0
 
 # LLM integration
 langchain==0.0.325
-langchain-groq==0.1.0
-groq==0.4.1
 
-# Utility packages
-python-dateutil==2.8.2
-pytz==2023.3
-
-# Optional - for enhanced visualizations
 matplotlib==3.8.0
 plotly==5.18.0
