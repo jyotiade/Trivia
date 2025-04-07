@@ -1178,7 +1178,7 @@ def display_quiz_results():
     """, unsafe_allow_html=True)
     
     # Return to home button
-    st.button("Return to Home", key="btn_return_home")
+    st.button("Return to Home", key="results_return_home_btn")
 
 def display_user_results():
     st.subheader("Your Quiz History")
